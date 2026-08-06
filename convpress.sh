@@ -11,6 +11,7 @@ PRESET="slow"
 CRF=20
 AUDIO="copy"
 SUFFIX="converted"
+ENCODER="gpu"
 
 # ---------- help ----------
 usage() {
@@ -24,12 +25,13 @@ usage() {
   echo "                  Choices: ultrafast, fast, medium, slow, veryslow"
   echo "    -a <codec>    Audio codec           (default: copy)"
   echo "                  Choices: copy, aac, mp3"
+  echo "    -e <gpu|cpu>  Encoder               (default: gpu, falls back to cpu if no GPU)"
   echo "    -h            Show this help"
   echo ""
   echo "  Examples:"
   echo "    ./convert.sh video.mkv"
   echo "    ./convert.sh video.mkv -o final.mp4 -c 22"
-  echo "    ./convert.sh video.mkv -p veryslow -c 18"
+  echo "    ./convert.sh video.mkv -e cpu -p veryslow -c 18"
   echo ""
 }
 
@@ -54,12 +56,13 @@ if [[ ! -f "$INPUT" ]]; then
 fi
 
 # ---------- parse options ----------
-while getopts ":o:c:p:a:h" opt; do
+while getopts ":o:c:p:a:e:h" opt; do
   case $opt in
     o) OUTPUT="$OPTARG" ;;
     c) CRF="$OPTARG" ;;
     p) PRESET="$OPTARG" ;;
     a) AUDIO="$OPTARG" ;;
+    e) ENCODER="$OPTARG" ;;
     h) usage; exit 0 ;;
     :) echo "  ERROR: Option -$OPTARG requires a value."; exit 1 ;;
     \?) echo "  ERROR: Unknown option -$OPTARG"; exit 1 ;;
@@ -72,11 +75,24 @@ if [[ -z "$OUTPUT" ]]; then
   OUTPUT="${BASENAME}_${SUFFIX}.mp4"
 fi
 
+# ---------- pick GPU or CPU codec ----------
+if [[ "$ENCODER" == "gpu" ]]; then
+  if command -v nvidia-smi &> /dev/null && nvidia-smi &> /dev/null; then
+    VCODEC="hevc_nvenc"
+  else
+    echo "  ⚠ No NVIDIA GPU detected — falling back to CPU."
+    ENCODER="cpu"
+    VCODEC="libx265"
+  fi
+else
+  VCODEC="libx265"
+fi
+
 # ---------- summary ----------
 echo ""
 echo "  ▶ Input   : $INPUT"
 echo "  ▶ Output  : $OUTPUT"
-echo "  ▶ Codec   : libx265 (H.265)"
+echo "  ▶ Codec   : $VCODEC ($ENCODER)"
 echo "  ▶ CRF     : $CRF"
 echo "  ▶ Preset  : $PRESET"
 echo "  ▶ Audio   : $AUDIO"
@@ -84,7 +100,7 @@ echo ""
 
 # ---------- run ----------
 ffmpeg -i "$INPUT" \
-  -c:v libx265 \
+  -c:v "$VCODEC" \
   -preset "$PRESET" \
   -crf "$CRF" \
   -c:a "$AUDIO" \
